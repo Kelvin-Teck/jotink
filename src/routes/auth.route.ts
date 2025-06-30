@@ -3,8 +3,8 @@ import * as AuthControllers from "../controllers/auth.controller";
 import {
   asyncHandler,
   validationHandler,
-} from "middlewares/error-handler.middleware";
-import { loginSchema, registerUserSchema } from "validators/schemas/user.schema";
+} from "../middlewares/error-handler.middleware";
+import { loginSchema, registerUserSchema } from "../validators/schemas/user.schema";
 
 const router = express.Router();
 

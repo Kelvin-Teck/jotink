@@ -1,5 +1,5 @@
-import db from "models";
-import { IUser } from "models/user.model";
+import db from "../models";
+import { IUser } from "../models/user.model";
 import Joi from "joi";
 
 export const findUserByEmail = async (email: string): Promise<IUser | null> => {

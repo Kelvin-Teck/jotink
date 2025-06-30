@@ -1,4 +1,4 @@
-import { ICustomError } from "types/error.type";
+import { ICustomError } from "../types/error.type";
 
 export class AppError extends Error implements ICustomError {
   public statusCode: number;

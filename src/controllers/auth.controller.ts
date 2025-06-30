@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
-import { sendError, sendSuccess } from "utils/api-responses";
+import { sendError, sendSuccess } from "../utils/api-responses";
 import * as AuthServices from "../services/auth.service";
-import { asyncHandler } from "middlewares/error-handler.middleware";
+import { asyncHandler } from "../middlewares/error-handler.middleware";
 
 export const register = async (req: Request, res: Response) => {
   const response = await AuthServices.createUser(req);

@@ -22,7 +22,7 @@ export default class JwtConfig {
       throw new Error('JWT secrets must be at least 32 characters long');
     }
 
-    this.accessTokenExpiry = process.env.ACCESS_TOKEN_EXP || '15m';
+    this.accessTokenExpiry = process.env.ACCESS_TOKEN_EXP || '1h';
     this.refreshTokenExpiry = process.env.REFRESH_TOKEN_EXP || '7d';
     this.issuer = process.env.JWT_ISSUER || 'notes-app';
     this.audience = process.env.JWT_AUDIENCE || 'notes-app-users';

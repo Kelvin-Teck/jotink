@@ -1,8 +1,8 @@
 import jwt, { JwtPayload, SignOptions, VerifyOptions } from "jsonwebtoken";
 import crypto from "crypto";
 import { AppError } from "../errors/app-error";
-import JwtConfig from "config/jwt.config";
-import { CustomJwtPayload, DecodedToken, JwtSignPayload, TokenPair } from "types/jwt.type";
+import JwtConfig from "../config/jwt.config";
+import { CustomJwtPayload, DecodedToken, JwtSignPayload, TokenPair } from "../types/jwt.type";
 
 type JwtExpiryString =
   | `${number}s`

@@ -1,5 +1,5 @@
-import { JwtHelper } from "helpers/jwt.helper";
-import { JwtSignPayload } from "types/jwt.type";
+import { JwtHelper } from "../helpers/jwt.helper";
+import { JwtSignPayload } from "../types/jwt.type";
 
 export const createAccessToken = (
   payload: JwtSignPayload,

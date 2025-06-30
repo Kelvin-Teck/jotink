@@ -68,9 +68,19 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: "Too many requests from this IP, please try again later.",
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  message: (req: { ip: any; }, res: any) => {
+    console.log(`Rate limit hit for IP: ${req.ip}`);
+    return "Too many requests — calm down!";
+  },
+  handler: (req, res, next, options) => {
+    res.status(options.statusCode).json({
+      success: false,
+      message: options.message,
+      rateLimitResetTime: new Date(Date.now() + options.windowMs).toISOString(),
+    });
+  },
   standardHeaders: true,
   legacyHeaders: false,
 });
