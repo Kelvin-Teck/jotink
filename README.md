@@ -30,7 +30,7 @@
 
 - Node.js LTS version
 - npm or yarn
-- MySQL running locally or via a service
+- MongoDB running locally or via a service
 
 ### 1. Clone The Repo
 
