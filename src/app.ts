@@ -11,6 +11,7 @@ import {
   handleUncaughtException,
 } from "./middlewares/error-handler.middleware";
 import authRoutes from "./routes/auth.route";
+import noteRoutes from "./routes/note.route"
 
 const app = express();
 
@@ -87,6 +88,7 @@ app.get("/health-status", (req: Request, res: Response) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use('/api/note', noteRoutes)
 
 // 404 handler (must be after all routes)
 app.use(notFoundHandler);

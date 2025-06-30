@@ -3,7 +3,7 @@ import { JwtHelper } from "../helpers/jwt.helper";
 import { AppError } from "../errors/app-error";
 import { asyncHandler } from "../middlewares/error-handler.middleware";
 
-interface AuthenticatedRequest extends Request {
+export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
     email: string;

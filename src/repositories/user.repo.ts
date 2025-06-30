@@ -11,6 +11,7 @@ export const createUser = async (userData: Partial<IUser>): Promise<IUser> => {
   const user = await db.User.create(userData);
   return user; 
 };
+
 export const findByIdentifier = async (identifier: string): Promise<IUser | null> =>  {
     // Use Joi to detect if identifier is a valid email
     const isEmail = Joi.string().email({ tlds: { allow: false } }).validate(identifier).error === undefined;
