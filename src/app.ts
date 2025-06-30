@@ -1,17 +1,36 @@
-import express from 'express';
-
+import express, { Request, Response } from "express";
+import cors from "cors";
+import helmet from "helmet";
+import compression from "compression";
+import rateLimit from "express-rate-limit";
+import { v4 as uuidv4 } from "uuid";
+import {
+  errorHandler,
+  notFoundHandler,
+  handleUnhandledRejection,
+  handleUncaughtException,
+} from "./middlewares/error-handler.middleware";
+import authRoutes from "./routes/auth.route";
 
 const app = express();
+
+// Set up global error handlers first
+handleUnhandledRejection();
+handleUncaughtException();
+
+// Request ID middleware
+app.use((req: any, res, next) => {
+  req.id = uuidv4();
+  res.setHeader("X-Request-ID", req.id);
+  next();
+});
 
 const corsOptions = {
   origin: function (
     origin: string | undefined,
     callback: (err: Error | null, allow?: boolean) => void
   ) {
-    const allowedOrigins = [
-      "https://nithub.unilag.edu.ng",
-      "http://localhost:5173",
-    ];
+    const allowedOrigins = ["*"];
 
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) {
@@ -39,8 +58,40 @@ const corsOptions = {
   maxAge: 1728000, // 20 days
 };
 
+// Security and parsing middleware
+app.use(helmet());
+app.use(cors(corsOptions));
+app.use(compression());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-app.use(express.json({}));
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: "Too many requests from this IP, please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
+app.use(limiter);
 
-export default app
+app.get("/health-status", (req: Request, res: Response) => {
+  // res.status(200).send('Server is Up and Running!!!')
+  res.json({
+    success: true,
+    message: "Server is Healthy and Running!!!",
+    timestamp: new Date().toISOString(),
+  });
+  return;
+});
+
+app.use("/api/auth", authRoutes);
+
+// 404 handler (must be after all routes)
+app.use(notFoundHandler);
+
+// Error handling middleware (must be last)
+app.use(errorHandler);
+
+export default app;

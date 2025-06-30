@@ -9,7 +9,7 @@ export const connectToDB = async (): Promise<void> => {
   try {
     mongoose.set("strictQuery", true);
 
-    const env = process.env.NODE_ENV || "development";
+    const env = process.env.APP_ENV || "development";
 
     const uri =
       env === "production"
@@ -27,7 +27,7 @@ export const connectToDB = async (): Promise<void> => {
     const connection = await mongoose.connect(uri, { dbName });
 
     console.log(
-      `Database Connection Successfully Established: ${connection.connection.host} (${dbName})`
+      `Database Connection Successfully Established`
     );
 
     // Optional: graceful shutdown

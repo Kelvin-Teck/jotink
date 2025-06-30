@@ -1,0 +1,1111 @@
+// types/error.types.ts
+export interface IErrorResponse {
+  success: false;
+  error: {
+    message: string;
+    code: string;
+    statusCode: number;
+    details?: any;
+    stack?: string;
+    timestamp: string;
+    path: string;
+    method: string;
+    requestId?: string;
+  };
+}
+
+export interface ICustomError extends Error {
+  statusCode?: number;
+  code?: string;
+  isOperational?: boolean;
+  details?: any;
+}
+
+// utils/AppError.ts
+export class AppError extends Error implements ICustomError {
+  public statusCode: number;
+  public code: string;
+  public isOperational: boolean;
+  public details?: any;
+
+  constructor(
+    message: string,
+    statusCode: number = 500,
+    code: string = 'INTERNAL_ERROR',
+    details?: any
+  ) {
+    super(message);
+    
+    this.statusCode = statusCode;
+    this.code = code;
+    this.isOperational = true;
+    this.details = details;
+
+    // Maintains proper stack trace for where our error was thrown
+    Error.captureStackTrace(this, this.constructor);
+  }
+
+  // Static factory methods for common errors
+  static badRequest(message: string = 'Bad Request', details?: any): AppError {
+    return new AppError(message, 400, 'BAD_REQUEST', details);
+  }
+
+  static unauthorized(message: string = 'Unauthorized access', details?: any): AppError {
+    return new AppError(message, 401, 'UNAUTHORIZED', details);
+  }
+
+  static forbidden(message: string = 'Access forbidden', details?: any): AppError {
+    return new AppError(message, 403, 'FORBIDDEN', details);
+  }
+
+  static notFound(message: string = 'Resource not found', details?: any): AppError {
+    return new AppError(message, 404, 'NOT_FOUND', details);
+  }
+
+  static conflict(message: string = 'Resource conflict', details?: any): AppError {
+    return new AppError(message, 409, 'CONFLICT', details);
+  }
+
+  static validationError(message: string = 'Validation failed', details?: any): AppError {
+    return new AppError(message, 422, 'VALIDATION_ERROR', details);
+  }
+
+  static tooManyRequests(message: string = 'Too many requests', details?: any): AppError {
+    return new AppError(message, 429, 'TOO_MANY_REQUESTS', details);
+  }
+
+  static internal(message: string = 'Internal server error', details?: any): AppError {
+    return new AppError(message, 500, 'INTERNAL_ERROR', details);
+  }
+
+  static serviceUnavailable(message: string = 'Service unavailable', details?: any): AppError {
+    return new AppError(message, 503, 'SERVICE_UNAVAILABLE', details);
+  }
+}
+
+// utils/errorLogger.ts
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'notes-api' },
+  transports: [
+    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'logs/combined.log' }),
+  ],
+});
+
+// Add console logging in development
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(new winston.transports.Console({
+    format: winston.format.combine(
+      winston.format.colorize(),
+      winston.format.simple()
+    )
+  }));
+}
+
+export const logError = (error: Error, req?: any, additionalInfo?: any) => {
+  const errorInfo = {
+    message: error.message,
+    stack: error.stack,
+    timestamp: new Date().toISOString(),
+    ...(req && {
+      method: req.method,
+      url: req.originalUrl,
+      ip: req.ip,
+      userAgent: req.get('User-Agent'),
+      userId: req.user?.id,
+      requestId: req.id
+    }),
+    ...additionalInfo
+  };
+
+  if (error instanceof AppError && error.isOperational) {
+    logger.warn('Operational Error', errorInfo);
+  } else {
+    logger.error('System Error', errorInfo);
+  }
+};
+
+// middleware/errorHandler.ts
+import { Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
+import { AppError } from '../utils/AppError';
+import { logError } from '../utils/errorLogger';
+import { IErrorResponse, ICustomError } from '../types/error.types';
+
+// Helper function to generate request ID
+const generateRequestId = (): string => {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
+// Helper function to handle MongoDB errors
+const handleMongoError = (error: any): AppError => {
+  if (error.name === 'ValidationError') {
+    const errors = Object.values(error.errors).map((err: any) => ({
+      field: err.path,
+      message: err.message,
+      value: err.value
+    }));
+    return AppError.validationError('Validation failed', { fields: errors });
+  }
+
+  if (error.name === 'CastError') {
+    return AppError.badRequest(`Invalid ${error.path}: ${error.value}`);
+  }
+
+  if (error.code === 11000) {
+    const field = Object.keys(error.keyValue)[0];
+    const value = error.keyValue[field];
+    return AppError.conflict(`${field} '${value}' already exists`);
+  }
+
+  if (error.name === 'DocumentNotFoundError') {
+    return AppError.notFound('Document not found');
+  }
+
+  return AppError.internal('Database operation failed');
+};
+
+// Helper function to handle JWT errors
+const handleJWTError = (error: any): AppError => {
+  if (error.name === 'JsonWebTokenError') {
+    return AppError.unauthorized('Invalid token');
+  }
+
+  if (error.name === 'TokenExpiredError') {
+    return AppError.unauthorized('Token expired');
+  }
+
+  if (error.name === 'NotBeforeError') {
+    return AppError.unauthorized('Token not active');
+  }
+
+  return AppError.unauthorized('Authentication failed');
+};
+
+// Helper function to handle Multer errors
+const handleMulterError = (error: any): AppError => {
+  if (error.code === 'LIMIT_FILE_SIZE') {
+    return AppError.badRequest('File too large');
+  }
+
+  if (error.code === 'LIMIT_FILE_COUNT') {
+    return AppError.badRequest('Too many files');
+  }
+
+  if (error.code === 'LIMIT_UNEXPECTED_FILE') {
+    return AppError.badRequest('Unexpected file field');
+  }
+
+  return AppError.badRequest('File upload failed');
+};
+
+// Helper function to sanitize error for production
+const sanitizeError = (error: ICustomError, isDevelopment: boolean): any => {
+  const sanitized: any = {
+    message: error.message,
+    code: error.code || 'INTERNAL_ERROR',
+    statusCode: error.statusCode || 500
+  };
+
+  if (error.details) {
+    sanitized.details = error.details;
+  }
+
+  // Only include stack trace in development
+  if (isDevelopment && error.stack) {
+    sanitized.stack = error.stack;
+  }
+
+  return sanitized;
+};
+
+// Main error handling middleware
+export const errorHandler = (
+  error: any,
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  const requestId = req.id || generateRequestId();
+  
+  let appError: AppError;
+
+  // Convert known errors to AppError
+  if (error instanceof AppError) {
+    appError = error;
+  } else if (error instanceof mongoose.Error) {
+    appError = handleMongoError(error);
+  } else if (error.name?.includes('JWT') || error.name?.includes('Token')) {
+    appError = handleJWTError(error);
+  } else if (error.name === 'MulterError') {
+    appError = handleMulterError(error);
+  } else if (error.type === 'entity.parse.failed') {
+    appError = AppError.badRequest('Invalid JSON payload');
+  } else if (error.code === 'EBADCSRFTOKEN') {
+    appError = AppError.forbidden('Invalid CSRF token');
+  } else if (error.status === 413) {
+    appError = AppError.badRequest('Payload too large');
+  } else {
+    // Unknown error - log it and return generic error
+    appError = AppError.internal(
+      isDevelopment ? error.message : 'Something went wrong'
+    );
+  }
+
+  // Log the error
+  logError(error, req, { requestId, originalError: error.name });
+
+  // Prepare error response
+  const errorResponse: IErrorResponse = {
+    success: false,
+    error: {
+      ...sanitizeError(appError, isDevelopment),
+      timestamp: new Date().toISOString(),
+      path: req.originalUrl,
+      method: req.method,
+      requestId
+    }
+  };
+
+  // Send error response
+  res.status(appError.statusCode).json(errorResponse);
+};
+
+// 404 handler middleware
+export const notFoundHandler = (req: Request, res: Response, next: NextFunction): void => {
+  const error = AppError.notFound(`Route ${req.originalUrl} not found`);
+  next(error);
+};
+
+// Async error wrapper to catch async function errors
+export const asyncHandler = (fn: Function) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+};
+
+// Validation error handler
+export const validationHandler = (schema: any, property: 'body' | 'params' | 'query' = 'body') => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const { error } = schema.validate(req[property], { abortEarly: false });
+    
+    if (error) {
+      const details = error.details.map((detail: any) => ({
+        field: detail.path.join('.'),
+        message: detail.message,
+        value: detail.context?.value
+      }));
+      
+      throw AppError.validationError('Validation failed', { fields: details });
+    }
+    
+    next();
+  };
+};
+
+// Global unhandled rejection handler
+export const handleUnhandledRejection = () => {
+  process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+    logError(new Error(`Unhandled Rejection: ${reason}`), null, { promise });
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    // Gracefully close server and exit
+    process.exit(1);
+  });
+};
+
+// Global uncaught exception handler
+export const handleUncaughtException = () => {
+  process.on('uncaughtException', (error: Error) => {
+    logError(error, null, { type: 'uncaughtException' });
+    console.error('Uncaught Exception:', error);
+    // Exit immediately as the app is in an undefined state
+    process.exit(1);
+  });
+};
+
+// Graceful shutdown handler
+export const gracefulShutdown = (server: any) => {
+  const shutdown = (signal: string) => {
+    console.log(`\n${signal} received. Starting graceful shutdown...`);
+    
+    server.close((err: any) => {
+      if (err) {
+        console.error('Error during server shutdown:', err);
+        process.exit(1);
+      }
+      
+      console.log('Server closed successfully');
+      process.exit(0);
+    });
+    
+    // Force close after 10 seconds
+    setTimeout(() => {
+      console.error('Forced shutdown after timeout');
+      process.exit(1);
+    }, 10000);
+  };
+  
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+};
+
+// app.ts - Integration example
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
+import { v4 as uuidv4 } from 'uuid';
+
+import {
+  errorHandler,
+  notFoundHandler,
+  handleUnhandledRejection,
+  handleUncaughtException,
+  gracefulShutdown
+} from './middleware/errorHandler';
+
+const app = express();
+
+// Set up global error handlers first
+handleUnhandledRejection();
+handleUncaughtException();
+
+// Request ID middleware
+app.use((req: any, res, next) => {
+  req.id = uuidv4();
+  res.setHeader('X-Request-ID', req.id);
+  next();
+});
+
+// Security and parsing middleware
+app.use(helmet());
+app.use(cors());
+app.use(compression());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/', limiter);
+
+// API routes
+app.use('/api/auth', authRoutes);
+app.use('/api/notes', noteRoutes);
+app.use('/api/users', userRoutes);
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Server is healthy',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 404 handler (must be after all routes)
+app.use(notFoundHandler);
+
+// Error handling middleware (must be last)
+app.use(errorHandler);
+
+// Start server
+const PORT = process.env.PORT || 3000;
+const server = app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+// Set up graceful shutdown
+gracefulShutdown(server);
+
+export default app;
+
+// Example usage in controllers
+/*
+// controllers/noteController.ts
+import { Request, Response, NextFunction } from 'express';
+import { AppError } from '../utils/AppError';
+import { asyncHandler } from '../middleware/errorHandler';
+
+export const createNote = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+  const { title, content } = req.body;
+  
+  if (!title) {
+    throw AppError.badRequest('Title is required');
+  }
+  
+  const note = await Note.create({
+    title,
+    content,
+    userId: req.user.id
+  });
+  
+  res.status(201).json({
+    success: true,
+    data: note
+  });
+});
+
+export const getNote = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+  const note = await Note.findById(req.params.id);
+  
+  if (!note) {
+    throw AppError.notFound('Note not found');
+  }
+  
+  // Check ownership
+  if (note.userId.toString() !== req.user.id) {
+    throw AppError.forbidden('Access denied');
+  }
+  
+  res.json({
+    success: true,
+    data: note
+  });
+});
+*/
+
+
+
+
+// First, install Joi: npm install joi @types/joi
+
+import Joi from 'joi';
+import { Request, Response, NextFunction } from 'express';
+import { AppError } from '../utils/AppError';
+
+// Enhanced validation middleware that works with our error system
+export const validateRequest = (schema: {
+  body?: Joi.ObjectSchema;
+  params?: Joi.ObjectSchema;
+  query?: Joi.ObjectSchema;
+  headers?: Joi.ObjectSchema;
+}) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const errors: any[] = [];
+
+    // Validate request body
+    if (schema.body) {
+      const { error } = schema.body.validate(req.body, { 
+        abortEarly: false,
+        allowUnknown: false,
+        stripUnknown: true
+      });
+      
+      if (error) {
+        const bodyErrors = error.details.map(detail => ({
+          field: `body.${detail.path.join('.')}`,
+          message: detail.message,
+          value: detail.context?.value,
+          type: detail.type
+        }));
+        errors.push(...bodyErrors);
+      }
+    }
+
+    // Validate request params
+    if (schema.params) {
+      const { error } = schema.params.validate(req.params, { 
+        abortEarly: false,
+        allowUnknown: false
+      });
+      
+      if (error) {
+        const paramErrors = error.details.map(detail => ({
+          field: `params.${detail.path.join('.')}`,
+          message: detail.message,
+          value: detail.context?.value,
+          type: detail.type
+        }));
+        errors.push(...paramErrors);
+      }
+    }
+
+    // Validate query parameters
+    if (schema.query) {
+      const { error } = schema.query.validate(req.query, { 
+        abortEarly: false,
+        allowUnknown: false,
+        stripUnknown: true
+      });
+      
+      if (error) {
+        const queryErrors = error.details.map(detail => ({
+          field: `query.${detail.path.join('.')}`,
+          message: detail.message,
+          value: detail.context?.value,
+          type: detail.type
+        }));
+        errors.push(...queryErrors);
+      }
+    }
+
+    // Validate headers
+    if (schema.headers) {
+      const { error } = schema.headers.validate(req.headers, { 
+        abortEarly: false,
+        allowUnknown: true // Headers usually have many unknown fields
+      });
+      
+      if (error) {
+        const headerErrors = error.details.map(detail => ({
+          field: `headers.${detail.path.join('.')}`,
+          message: detail.message,
+          value: detail.context?.value,
+          type: detail.type
+        }));
+        errors.push(...headerErrors);
+      }
+    }
+
+    // If there are validation errors, throw AppError
+    if (errors.length > 0) {
+      throw AppError.validationError('Request validation failed', { 
+        fields: errors,
+        totalErrors: errors.length
+      });
+    }
+
+    next();
+  };
+};
+
+// Validation schemas for different routes
+export const authValidation = {
+  // User registration validation
+  register: {
+    body: Joi.object({
+      email: Joi.string()
+        .email({ minDomainSegments: 2 })
+        .required()
+        .max(254)
+        .lowercase()
+        .trim()
+        .messages({
+          'string.email': 'Please provide a valid email address',
+          'string.max': 'Email must be less than 254 characters',
+          'any.required': 'Email is required'
+        }),
+      
+      password: Joi.string()
+        .min(8)
+        .max(128)
+        .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+        .required()
+        .messages({
+          'string.min': 'Password must be at least 8 characters long',
+          'string.max': 'Password must be less than 128 characters',
+          'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+          'any.required': 'Password is required'
+        }),
+      
+      confirmPassword: Joi.string()
+        .valid(Joi.ref('password'))
+        .required()
+        .messages({
+          'any.only': 'Passwords do not match',
+          'any.required': 'Password confirmation is required'
+        }),
+      
+      firstName: Joi.string()
+        .min(2)
+        .max(50)
+        .pattern(/^[a-zA-Z\s]+$/)
+        .required()
+        .trim()
+        .messages({
+          'string.min': 'First name must be at least 2 characters long',
+          'string.max': 'First name must be less than 50 characters',
+          'string.pattern.base': 'First name can only contain letters and spaces',
+          'any.required': 'First name is required'
+        }),
+      
+      lastName: Joi.string()
+        .min(2)
+        .max(50)
+        .pattern(/^[a-zA-Z\s]+$/)
+        .required()
+        .trim()
+        .messages({
+          'string.min': 'Last name must be at least 2 characters long',
+          'string.max': 'Last name must be less than 50 characters',
+          'string.pattern.base': 'Last name can only contain letters and spaces',
+          'any.required': 'Last name is required'
+        }),
+      
+      displayName: Joi.string()
+        .max(100)
+        .trim()
+        .optional()
+        .messages({
+          'string.max': 'Display name must be less than 100 characters'
+        }),
+      
+      acceptTerms: Joi.boolean()
+        .valid(true)
+        .required()
+        .messages({
+          'any.only': 'You must accept the terms and conditions',
+          'any.required': 'Terms acceptance is required'
+        })
+    })
+  },
+
+  // User login validation
+  login: {
+    body: Joi.object({
+      email: Joi.string()
+        .email()
+        .required()
+        .lowercase()
+        .trim()
+        .messages({
+          'string.email': 'Please provide a valid email address',
+          'any.required': 'Email is required'
+        }),
+      
+      password: Joi.string()
+        .required()
+        .messages({
+          'any.required': 'Password is required'
+        }),
+      
+      rememberMe: Joi.boolean()
+        .optional()
+        .default(false)
+    })
+  },
+
+  // Password reset request
+  forgotPassword: {
+    body: Joi.object({
+      email: Joi.string()
+        .email()
+        .required()
+        .lowercase()
+        .trim()
+        .messages({
+          'string.email': 'Please provide a valid email address',
+          'any.required': 'Email is required'
+        })
+    })
+  },
+
+  // Password reset validation
+  resetPassword: {
+    body: Joi.object({
+      token: Joi.string()
+        .required()
+        .messages({
+          'any.required': 'Reset token is required'
+        }),
+      
+      password: Joi.string()
+        .min(8)
+        .max(128)
+        .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+        .required()
+        .messages({
+          'string.min': 'Password must be at least 8 characters long',
+          'string.max': 'Password must be less than 128 characters',
+          'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
+          'any.required': 'Password is required'
+        }),
+      
+      confirmPassword: Joi.string()
+        .valid(Joi.ref('password'))
+        .required()
+        .messages({
+          'any.only': 'Passwords do not match',
+          'any.required': 'Password confirmation is required'
+        })
+    })
+  }
+};
+
+// Note validation schemas
+export const noteValidation = {
+  // Create note validation
+  create: {
+    body: Joi.object({
+      title: Joi.string()
+        .min(1)
+        .max(200)
+        .required()
+        .trim()
+        .messages({
+          'string.min': 'Title cannot be empty',
+          'string.max': 'Title must be less than 200 characters',
+          'any.required': 'Title is required'
+        }),
+      
+      content: Joi.string()
+        .max(50000)
+        .optional()
+        .allow('')
+        .messages({
+          'string.max': 'Content must be less than 50,000 characters'
+        }),
+      
+      tags: Joi.array()
+        .items(
+          Joi.string()
+            .min(1)
+            .max(30)
+            .pattern(/^[a-zA-Z0-9_-]+$/)
+            .messages({
+              'string.min': 'Tag cannot be empty',
+              'string.max': 'Tag must be less than 30 characters',
+              'string.pattern.base': 'Tags can only contain letters, numbers, hyphens, and underscores'
+            })
+        )
+        .max(20)
+        .optional()
+        .default([])
+        .messages({
+          'array.max': 'Maximum 20 tags allowed'
+        }),
+      
+      folderId: Joi.string()
+        .pattern(/^[0-9a-fA-F]{24}$/)
+        .optional()
+        .messages({
+          'string.pattern.base': 'Invalid folder ID format'
+        }),
+      
+      isPublic: Joi.boolean()
+        .optional()
+        .default(false),
+      
+      format: Joi.string()
+        .valid('plain', 'markdown', 'rich')
+        .optional()
+        .default('plain')
+        .messages({
+          'any.only': 'Format must be one of: plain, markdown, rich'
+        })
+    })
+  },
+
+  // Update note validation
+  update: {
+    params: Joi.object({
+      id: Joi.string()
+        .pattern(/^[0-9a-fA-F]{24}$/)
+        .required()
+        .messages({
+          'string.pattern.base': 'Invalid note ID format',
+          'any.required': 'Note ID is required'
+        })
+    }),
+    
+    body: Joi.object({
+      title: Joi.string()
+        .min(1)
+        .max(200)
+        .trim()
+        .optional()
+        .messages({
+          'string.min': 'Title cannot be empty',
+          'string.max': 'Title must be less than 200 characters'
+        }),
+      
+      content: Joi.string()
+        .max(50000)
+        .optional()
+        .allow('')
+        .messages({
+          'string.max': 'Content must be less than 50,000 characters'
+        }),
+      
+      tags: Joi.array()
+        .items(
+          Joi.string()
+            .min(1)
+            .max(30)
+            .pattern(/^[a-zA-Z0-9_-]+$/)
+        )
+        .max(20)
+        .optional(),
+      
+      folderId: Joi.string()
+        .pattern(/^[0-9a-fA-F]{24}$/)
+        .optional()
+        .allow(null),
+      
+      isPublic: Joi.boolean()
+        .optional(),
+      
+      format: Joi.string()
+        .valid('plain', 'markdown', 'rich')
+        .optional()
+    }).min(1).messages({
+      'object.min': 'At least one field must be provided for update'
+    })
+  },
+
+  // Get notes with pagination and filtering
+  getAll: {
+    query: Joi.object({
+      page: Joi.number()
+        .integer()
+        .min(1)
+        .optional()
+        .default(1)
+        .messages({
+          'number.integer': 'Page must be an integer',
+          'number.min': 'Page must be at least 1'
+        }),
+      
+      limit: Joi.number()
+        .integer()
+        .min(1)
+        .max(100)
+        .optional()
+        .default(10)
+        .messages({
+          'number.integer': 'Limit must be an integer',
+          'number.min': 'Limit must be at least 1',
+          'number.max': 'Limit cannot exceed 100'
+        }),
+      
+      search: Joi.string()
+        .max(100)
+        .optional()
+        .trim()
+        .messages({
+          'string.max': 'Search query must be less than 100 characters'
+        }),
+      
+      tags: Joi.string()
+        .optional()
+        .custom((value, helpers) => {
+          const tags = value.split(',').map((tag: string) => tag.trim());
+          if (tags.some((tag: string) => tag.length > 30)) {
+            return helpers.error('custom.tagLength');
+          }
+          return tags;
+        })
+        .messages({
+          'custom.tagLength': 'Each tag must be less than 30 characters'
+        }),
+      
+      folderId: Joi.string()
+        .pattern(/^[0-9a-fA-F]{24}$/)
+        .optional()
+        .messages({
+          'string.pattern.base': 'Invalid folder ID format'
+        }),
+      
+      sortBy: Joi.string()
+        .valid('createdAt', 'updatedAt', 'title')
+        .optional()
+        .default('updatedAt')
+        .messages({
+          'any.only': 'Sort by must be one of: createdAt, updatedAt, title'
+        }),
+      
+      sortOrder: Joi.string()
+        .valid('asc', 'desc')
+        .optional()
+        .default('desc')
+        .messages({
+          'any.only': 'Sort order must be either asc or desc'
+        }),
+      
+      format: Joi.string()
+        .valid('plain', 'markdown', 'rich')
+        .optional()
+        .messages({
+          'any.only': 'Format must be one of: plain, markdown, rich'
+        }),
+      
+      isPublic: Joi.boolean()
+        .optional()
+    })
+  },
+
+  // Get single note
+  getById: {
+    params: Joi.object({
+      id: Joi.string()
+        .pattern(/^[0-9a-fA-F]{24}$/)
+        .required()
+        .messages({
+          'string.pattern.base': 'Invalid note ID format',
+          'any.required': 'Note ID is required'
+        })
+    })
+  }
+};
+
+// Common validation schemas
+export const commonValidation = {
+  // MongoDB ObjectId validation
+  objectId: {
+    params: Joi.object({
+      id: Joi.string()
+        .pattern(/^[0-9a-fA-F]{24}$/)
+        .required()
+        .messages({
+          'string.pattern.base': 'Invalid ID format',
+          'any.required': 'ID is required'
+        })
+    })
+  },
+
+  // Pagination validation
+  pagination: {
+    query: Joi.object({
+      page: Joi.number().integer().min(1).optional().default(1),
+      limit: Joi.number().integer().min(1).max(100).optional().default(10)
+    })
+  }
+};
+
+// Usage examples in routes
+/*
+// routes/authRoutes.ts
+import express from 'express';
+import { validateRequest, authValidation } from '../middleware/validation';
+import { authController } from '../controllers/authController';
+import { asyncHandler } from '../middleware/errorHandler';
+
+const router = express.Router();
+
+// Register route with validation
+router.post(
+  '/register',
+  validateRequest(authValidation.register),
+  asyncHandler(authController.register)
+);
+
+// Login route with validation
+router.post(
+  '/login',
+  validateRequest(authValidation.login),
+  asyncHandler(authController.login)
+);
+
+// Password reset request
+router.post(
+  '/forgot-password',
+  validateRequest(authValidation.forgotPassword),
+  asyncHandler(authController.forgotPassword)
+);
+
+// Password reset
+router.post(
+  '/reset-password',
+  validateRequest(authValidation.resetPassword),
+  asyncHandler(authController.resetPassword)
+);
+
+export default router;
+*/
+
+/*
+// routes/noteRoutes.ts
+import express from 'express';
+import { validateRequest, noteValidation } from '../middleware/validation';
+import { noteController } from '../controllers/noteController';
+import { asyncHandler } from '../middleware/errorHandler';
+import { authenticate } from '../middleware/auth';
+
+const router = express.Router();
+
+// All routes require authentication
+router.use(authenticate);
+
+// Create note
+router.post(
+  '/',
+  validateRequest(noteValidation.create),
+  asyncHandler(noteController.create)
+);
+
+// Get all notes with filtering and pagination
+router.get(
+  '/',
+  validateRequest(noteValidation.getAll),
+  asyncHandler(noteController.getAll)
+);
+
+// Get single note
+router.get(
+  '/:id',
+  validateRequest(noteValidation.getById),
+  asyncHandler(noteController.getById)
+);
+
+// Update note
+router.put(
+  '/:id',
+  validateRequest(noteValidation.update),
+  asyncHandler(noteController.update)
+);
+
+// Delete note
+router.delete(
+  '/:id',
+  validateRequest({ params: noteValidation.getById.params }),
+  asyncHandler(noteController.delete)
+);
+
+export default router;
+*/
+
+// Custom Joi extensions for additional validation
+export const customJoi = Joi.extend({
+  type: 'string',
+  base: Joi.string(),
+  messages: {
+    'string.strongPassword': 'Password must contain at least 8 characters with uppercase, lowercase, number and special character'
+  },
+  rules: {
+    strongPassword: {
+      validate(value, helpers) {
+        const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+        if (!strongPasswordRegex.test(value)) {
+          return helpers.error('string.strongPassword');
+        }
+        return value;
+      }
+    }
+  }
+});
+
+// Example of conditional validation
+export const conditionalValidation = {
+  userUpdate: {
+    body: Joi.object({
+      email: Joi.string().email().optional(),
+      currentPassword: Joi.string().when('newPassword', {
+        is: Joi.exist(),
+        then: Joi.required(),
+        otherwise: Joi.forbidden()
+      }),
+      newPassword: customJoi.string().strongPassword().optional(),
+      confirmPassword: Joi.string().when('newPassword', {
+        is: Joi.exist(),
+        then: Joi.valid(Joi.ref('newPassword')).required(),
+        otherwise: Joi.forbidden()
+      })
+    })
+  }
+};
