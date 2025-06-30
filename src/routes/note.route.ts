@@ -3,9 +3,9 @@ import * as NoteController from "../controllers/note.controller";
 import {
   asyncHandler,
   validationHandler,
-} from "middlewares/error-handler.middleware";
-import { createNoteSchema, updateNoteSchema } from "validators/schemas/note.schema";
-import { authenticate } from "middlewares/auth.middleware";
+} from "../middlewares/error-handler.middleware";
+import { createNoteSchema, updateNoteSchema } from "../validators/schemas/note.schema";
+import { authenticate } from "../middlewares/auth.middleware";
 const router = express.Router();
 
 router

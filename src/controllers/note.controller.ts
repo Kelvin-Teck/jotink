@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import * as NoteServices from '../services/note.service';
-import { sendSuccess } from "utils/api-responses";
-import { AuthenticatedRequest } from "middlewares/auth.middleware";
+import { sendSuccess } from "../utils/api-responses";
+import { AuthenticatedRequest } from "../middlewares/auth.middleware";
 
 export const addNote = async (req:AuthenticatedRequest, res:Response) => {
     const response = await NoteServices.addNote(req);
