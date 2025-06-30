@@ -1,31 +1,30 @@
-# Demo Credit 
+# Jotink
 
 
 
 ## Description
 
-**Demo-Credit**  Demo Credit is a mobile lending app that requires wallet functionality. This is needed as borrowers need a wallet to receive the loans they have been granted and also send the money for repayments.
+**Jotink**  JotInk is a modern, secure, and efficient note-taking API service designed to help users capture thoughts, ideas, tasks, and important information seamlessly. Built with a robust Node.js and TypeScript backend, and powered by MongoDB, JotInk provides users with a simple yet powerful platform for creating, organizing, and retrieving notes—anytime, anywhere.
 
 
-## ✨ Features 
+## Features 
 
-- [x] CRUD operations for user and wallet
+- [x] CRUD operations for user and Notes
 - [x] Authentication & Authorization (Faux)
 - [x] Input validation (Joi)
-- [x] MySQL integration
+- [x] MongoDB integration
 - [x] Rate limiting and logging
 
-## 🔧 Tech Stack
+## Tech Stack
 
 - **Node.js**
 - **TypeScript**
 - **Express.js**
-- **MySQL** 
+- **MongoDB** 
 - **Joi** for input validation
-- **Jest** for testing
-- **Knex ORM** 
+- **Mongoose ODM** 
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -36,8 +35,8 @@
 ### 1. Clone The Repo
 
 ```bash
-git clone https://github.com/Kelvin-Teck/demo-credit.git
-cd demo-credit
+git clone https://github.com/Kelvin-Teck/jotink.git
+cd jotink
 ```
 ### 2. Install the Dependencies
 
@@ -50,33 +49,27 @@ npm install
 Create a .env file in the root directory with the following:
 
 ```env
-NODE_ENV=<current_environment> # development or production
-PORT=<your_specified_port> 
-DB_HOST=<database_host> # if in development - <localhost> in production - <your_remote_databse_host>
-DB_PORT=<your_database_port> # if in development defaults - 3306, production - <your_remote_database_port> 
-DB_USER=<your_database_user>
-DB_PASSWORD=<your_database_password>
-DB_NAME=<your_database_name>
-EMAIL_SERVICE=gmail
-EMAIL_HOST=gmail
-EMAIL_PORT=587
-EMAIL_PASS=<your_email_app_password>
-EMAIL_USER=<your_email_address>
-ADJUTOR_API_BASE_URL=https://adjutor.lendsqr.com/v2
-ADJUTOR_API_KEY=<your_api_key>
-```
-Make sure your MySQL server is running and the database `your_database_name` exists. You can create it with:
+# ──────── Environment Configuration ────────
+NODE_ENV=production             # Set to 'development' or 'production'
+PORT=8100                       # Port your application will run on
 
-```sql
-CREATE DATABASE <your_database_name>;
-```
+# ──────── Database Configuration ────────
 
-### 4. Running Database Migrations
+MONGO_URI_DEVELOPMENT=mongodb://localhost:27017/jotink
+MONGO_URI_TEST=mongodb://localhost:27017/jotink
+MONGO_URI_PRODUCTION=mongodb+srv://<your_username>:<your_password>@jotink.bj2vnds.mongodb.net/?retryWrites=true&w=majority&appName=jotink
+MONGO_DB_NAME=jotink
 
-```bash
-npm run migrate
+# ──────── JWT & Security ────────
+ACCESS_TOKEN_SECRET=your-super-secure-access-token-secret-here
+REFRESH_TOKEN_SECRET=your-super-secure-refresh-token-secret-here
+
+ACCESS_TOKEN_EXP=2h            # Token lifespan (e.g., 15m, 2h)
+REFRESH_TOKEN_EXP=7d           # Token lifespan (e.g., 7d, 30d)
+JWT_ISSUER=jotink-app
+JWT_AUDIENCE=jotink-app-users
+
 ```
-This will set up your tables using Knex.
 
 ### 5. Start the Development Server
 ```bash
@@ -84,92 +77,52 @@ npm run dev
 ```
 The server should now be running on `http://localhost:<your_specified_port>`
 
-## 💽 Database Design (ER Diagram)
 
-
-Below is the Entity Relationship (ER) diagram representing the database schema for the Demo-Credit application:
-
-![Demo-Credit ER Diagram](./demo-credit-erd_1.png)
-
-> This diagram illustrates the relationships between users, wallets, transactions, and other core entities in the system.
-
-## 📬 API Reference
+## API Reference
 
 You can explore and test all endpoints using our Postman documentation:
 
-👉 [Demo-Credit API Postman Docs](https://documenter.getpostman.com/view/30059286/2sB2ixjE3E)
+👉 [Jotink API Postman Docs](https://documenter.getpostman.com/view/30059286/2sB34ZpiyC)
 
 ## 🗂️ Project Structure
 
 ```bash
-demo-credit/
+Jotink/
 ├── src/
-│   ├── config/            # Database and environment configurations
-│   ├── controllers/       # Route handlers for each feature (e.g., auth, wallet)
-|   |-- database/          # Database Folder
-|   |   |-- migrations/    # Database migrations files
-|   |-- interfaces/        # TypeScript interface definitions 
+│   ├── config/            # environment configurations   
+│   ├── controllers/       # Route handlers for each feature
+|   |-- helpers/           # Helper Functions
+|   |-- logs/              # Error logs
+|   |-- errors/            # Error Handlers Definition (e.g. BAD REQUEST, FORBIDDEN REQUEST,etc.) 
+|   |-- repositories/      # Database Interaction 
 │   ├── middlewares/       # Custom middleware (e.g., auth, error handler)
-│   ├── models/            # Knex models and queries
+│   ├── models/            # Mongoose models
 │   ├── routes/            # API route definitions
-│   ├── services/          # Business logic and integrations (e.g., blacklist check)
-│   ├── utils/             # Helper functions (e.g., formatters, validators)
+│   ├── services/          # Business logic and integrations
+│   ├── utils/             # Helper functions
+|   |-- validators/        # Validations (e.g. input validation)
+|   |    |-- schemas/      # Input validation Schemas
 │   ├── types/             # TypeScript type definitions
+|   |-- app.ts             # Express framework initailization, middleware setup, etc.  
 │   └── index.ts           # Application entry point
 │
 |
 ├── .env                   # Environment variable definitions
 ├── .gitignore             # Git ignored files
-├── knexfile.ts            # Knex configuration
-├── package-lock.json          
+├── nodemon.json           # Nodemon configuration
+├── package-lock.json      # Packages Lock File    
 |-- package.json           # Project metadata and scripts
 ├── tsconfig.json          # TypeScript compiler configuration
 └── README.md              # Project documentation
 
 
 ```
-## 🧪 Testing 
 
-Ensure you’ve set up your test environment before running tests.
-
-### 🔧 Setup
-Install testing dependencies (if you haven’t already):
-
-```bash
-npm install --save-dev jest ts-jest @types/jest supertest
-```
-Add a test script to your package.json:
-
-```json
-"scripts": {
-  "test": "jest"
-}
-```
-### 🧪 Running Tests
-
-```bash
-npm run test
-```
-
-Tests are usually placed in a __tests__/ directory and follow this structure:
-
-```
-__tests__/
-├── userController.spec.ts
-├── walletController.spec.ts
-├── userService.spec.ts
-├── walletService.spec.ts
-└── utils/
-    └── apiResponse.spec.ts
-    └── caseConverter.spec.ts
-    └── helpers.spec.ts
-    └── validator.spec.ts
-```
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome and appreciated! Here’s how you can help:
 
-### 🚀 Getting Started
+### Getting Started
 
 1. Fork the repo
 
@@ -208,15 +161,12 @@ See the [MIT License](https://opensource.org/licenses/MIT) for more information.
 👤 **Author**
 
 Eneh Kelvin Chukwuemeka
-Developer & Maintainer of Demo-Credit
+Developer & Maintainer of Jotink
 [GitHub](https://github.com/Kelvin-Teck)
 
-Built with ❤️ using Node.js, TypeScript, and MySQL.
+Built with ❤️ using Node.js, TypeScript, and MongoDB.
 
-**🙌 Acknowledgements**
+**Acknowledgements**
 
-A Big Thanks to Lendsqr for the Adjutor Karma API for blacklist verification.
-
-Inspired by modern fintech wallet systems and micro-lending architectures.
-
+A Big Thanks to everyone for their support.
 Special shout-out to the open-source community for continuous inspiration.
